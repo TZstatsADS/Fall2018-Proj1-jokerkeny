@@ -244,6 +244,8 @@ table=data.frame(x=x,y=y)
 p <- plot_ly(table, y = ~y, color = ~x, type = "box")
 p
 ```
+Surprisingly, there is little difference on sentiment index across on gender, family and age.  
+
 ## Does Season Affect Happiness
 we don't have timestamp of the moments collected. So, we can only find whether the moments contain certain season words, such as "Spring", "Autumn", "Winter" and "Summer". 
 ```{r}
@@ -268,13 +270,37 @@ bag_of_words <-  hm_data %>%
 word_count <- bag_of_words %>%
   count(word, sort = TRUE)
 
+word_count %>%
+      slice(1:100) %>%
+      wordcloud2(size = 0.6,
+                 rotateRatio = 0)
 ```
+
+We create a word cloud for all happy moments, we can see that "friend", "spending" "day" terms has a very high occurrences. 
 
 
 ## compute TF-IDF weighted document-term matrices.
 
-As we would like to identify interesting words for each group, we use [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) to weigh each term within each speech.
-```{r}
+The above wordcloud is too simple.
+As we would like to identify interesting words for each group, we use [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) to weigh each term within each group.  
+For example, consider which terms is relatively more frequent in 3-month moments:
+```{r wordcloud2, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
 
+month3 <-  hm_data[hm_data$reflection_period=="months_3",] %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE)
+
+word_count <- month3 %>%
+  inner_join(word_count, by = "word")
+
+word_count$n.y=word_count$n.y+1
+
+wc=data.frame(word=word_count$word,n=word_count$n.x/word_count$n.y)
+wc$n=as.integer(wc$n*1000)
+wc=wc[order(-wc$n),]
+wc %>%
+      slice(1:100) %>%
+      wordcloud2(size = 0.6,
+                 rotateRatio = 0)
 ```
-
+We can see, that moments like valentines will be more impressive and last longer in memory.

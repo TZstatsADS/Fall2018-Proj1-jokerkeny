@@ -12,7 +12,7 @@ Term: Fall 2018
 + Project title: What makes you Happy?
 + This project is conducted by Yang Yang
 
-+ Project summary: [a short summary] 
++ Project summary: we trying to find which factor has influence to happiness, in other words, from the data, we want to figure out which kind of moments is more likely to make people happy. To solve this, we use many data-mining techniques such as word-cloud, TF-IDF.
 
 
 Please see each subfolder for a README file.
