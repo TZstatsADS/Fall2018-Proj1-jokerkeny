@@ -11,7 +11,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 *Reminder: some codes are hidden from the html report.  
 To see the full code, please see the "FinalReport.Rmd".  
-If you wanna run whole code, turn all chunks' eval option into TRUE*
+If you wanna run whole code, remember to turn all chunks' eval option into TRUE*  
+  
+  
+*By the way, some analysis are already included in the Startercode "HappyDB_RShiny.Rmd" which is also included in the /doc folder.  
+This report won't include those existing results.*  
 
 ![](../figs/emotion.png)
 
@@ -84,7 +88,7 @@ hm_data=read_csv("../output/processed_moments.csv")
 
 We also combine the happy moments data with the worker's demographic data.  
 To make our research more specific, we filter out some special data like other gender, NA gender.   
-[Code hided]
+[Code hidden]
 ```{r combining data, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
 # Combine both the data sets and keep the required columns for analysis
 # We select a subset of the data that satisfies specific row conditions.
@@ -94,13 +98,14 @@ hm_data <- hm_data %>%
          original_hm,
          gender, 
          marital, 
-         parenthood,
-         reflection_period,
+         parenthood, 
+         reflection_period, 
          age, 
          country, 
          ground_truth_category, 
          text) %>%
   mutate(count = sapply(hm_data$text, wordcount)) %>%
+  mutate(age=as.numeric(age)) %>%
   mutate(originalcount = sapply(hm_data$original_hm, wordcount)) %>%
   filter(gender %in% c("m", "f")) %>%
   filter(marital %in% c("single", "married")) %>%
@@ -109,6 +114,9 @@ hm_data <- hm_data %>%
   mutate(reflection_period = fct_recode(reflection_period, 
                                         months_3 = "3m", hours_24 = "24h"))
 
+hm_data=hm_data[hm_data$age<200& !is.na(hm_data$age),]
+# unique(hm_data$age)
+# head(sort(hm_data$age,decreasing = T),100)
 ```
 
 # Basic Exploration of Data
@@ -121,7 +129,7 @@ head(hm_data)
 We can see, that demographic data include their gender, marital, parentihood, age, country, etc. And the original happy moments data consists of 1 sentence in each moment.  
 For detail Description, see [HappyDB](https://rit-public.github.io/HappyDB/)  
 
-## Word Count
+## Sentence Length
 We can perform a statistical analysis based on the number of words. 
 ```{r wordcount, cache=TRUE}
 summary(hm_data$originalcount)
@@ -133,31 +141,140 @@ substr(hm_data$original_hm[hm_data$originalcount>1000],0,200)
 Oh, I see, these people just ignore the requirement of the tasks! **They wrote essays about their happy moments!!**
 OK, just exclude them from the data. 
 No way to let them increase their weight by 100 times huh.
+*All plot in this report can cursor over it and see the detail number*
 ```{r, cache=TRUE}
 hm_data=hm_data[hm_data$originalcount<500,]
 summary(hm_data$originalcount)
 hist(hm_data$originalcount[hm_data$originalcount<100],main="Happy Moments' Sentence Length",xlab = "Length")
 ```
 
-Most of the happy moments are short sentences, as expected!  
-Some happy moments even have only two words.
+Most of the happy moments are short sentences (<20 words), as expected!  
+Some happy moments even have only two words.  
 
+# Further Analysis
 ## Happiness Doesn't Depend on Demographic Difference
 We tried to find out whether **Demographic Difference** influence Happiness. 
 
-
-
-
-```{r sentiment, cache=TRUE}
-
-sentiment.values.v <- get_sentiment(hm_data$text[hm_data$gender=='m'], method="syuzhet")
-summary(sentiment.values.v)
-boxplot(sentiment.values.v, ylim=c(-5, 20), main="Male", ylab="Sentiment of Experiences")
+Intuitively, we believe that Demographic may influence the emotion. For example, young people may be happier than old man as they have more time to play, Japanese man may suffer from high pressure...    
+The first naive solution is, find the frequency difference between happy moments of different demographic attributes.
+```{r, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
+plot_ly(
+  x = c("Male", "Female", "Single", "Married Parent", "Married NonParent"),
+  y = c(sum(hm_data$gender=="m"), sum(hm_data$gender=="f"), 
+        sum(hm_data$marital=="single"), 
+        sum(hm_data$marital=="married" & hm_data$parenthood=="y"),
+        sum(hm_data$marital=="married" & hm_data$parenthood=="n")
+        ),
+  name = "moments number for different demographic groups",
+  type = "bar"
+)
+table <- data.frame(x = c("Twenties", "Thirties", "Forties", "Fifties", "Sixties", "Seventy+"),
+                    y = c(
+        sum(hm_data$age>=20 & hm_data$age<30),
+        sum(hm_data$age>=30 & hm_data$age<40),
+        sum(hm_data$age>=40 & hm_data$age<50),
+        sum(hm_data$age>=50 & hm_data$age<60),
+        sum(hm_data$age>=60 & hm_data$age<70),
+        sum(hm_data$age>=70) )
+)
+table$x <- factor(table$x, levels = c("Twenties", "Thirties", "Forties", "Fifties", "Sixties", "Seventy+"))
+plot_ly(
+  data=table,
+  x = ~x,
+  y = ~y,
+  name = "moments number for different age groups",
+  type = "bar"
+)
 ```
-```{r, cache=TRUE}
+Well, seems there really are some difference.   
+However, it must be due to the sample bias, which means, the difference could be due to the sample size difference of the demographic group, such as, there are more females taking survey than males.  
+So how to accurately compare each group, in order to answer this question?  
+Based on a general Sentimental Corpus, using [Syuzhet Package](https://cran.r-project.org/web/packages/syuzhet/vignettes/syuzhet-vignette.html), we can have a sentimental analysis for each group's moments' sentences.  
+[Code hidden]
+```{r sentiment, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
+sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=20 & hm_data$age<30)], method="syuzhet")
 p <- plot_ly(type = 'box') %>%
-    add_boxplot(y = sentiment.values.v, boxpoints = 'outliers',
-              marker = list(color = 'rgb(7,40,89)'),
-              line = list(color = 'rgb(7,40,89)'),
-              name = "All Points")
+    add_boxplot(y = sentiment.values, boxpoints = 'outliers',
+              name = "Twenties")
+
+sentiment.values <- get_sentiment(hm_data$text[hm_data$age>=30 & hm_data$age<40], method="syuzhet")
+p = p %>%
+  add_boxplot(y = sentiment.values, boxpoints = 'outliers',
+              name = "Thirties")
+
+sentiment.values <- get_sentiment(hm_data$text[hm_data$marital=="single"], method="syuzhet")
+p = p %>%
+  add_boxplot(y = sentiment.values, boxpoints = 'outliers',
+              name = "Forties")
+
+sentiment.values <- get_sentiment(
+  hm_data$text[hm_data$marital=="married" & hm_data$parenthood=="y"],
+  method="syuzhet")
+p = p %>%
+  add_boxplot(y = sentiment.values, boxpoints = 'outliers',
+              name = "Fifties")
+
+sentiment.values <- get_sentiment(
+  hm_data$text[hm_data$marital=="married" & hm_data$parenthood=="n"],
+  method="syuzhet")
+p = p %>%
+  add_boxplot(y = sentiment.values, boxpoints = 'outliers',
+              name = "Sixties")
+p
 ```
+```{r sentiment2, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
+y1=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=20 & hm_data$age<30)], method="syuzhet")
+y2=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=30 & hm_data$age<40)], method="syuzhet")
+y3=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=40 & hm_data$age<50)], method="syuzhet")
+y4=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=50 & hm_data$age<60)], method="syuzhet")
+y5=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=60 & hm_data$age<70)], method="syuzhet")
+y6=sentiment.values <- get_sentiment(hm_data$text[(hm_data$age>=70)], method="syuzhet")
+x=table$x
+x=c(
+rep(x[1],length(y1)),
+rep(x[2],length(y2)),
+rep(x[3],length(y3)),
+rep(x[4],length(y4)),
+rep(x[5],length(y5)),
+rep(x[6],length(y6)) )
+y=c(y1,y2,y3,y4,y5,y6)
+x=as.factor(x)
+levels(x)=c("Twenties", "Thirties", "Forties", "Fifties", "Sixties", "Seventy+")
+table=data.frame(x=x,y=y)
+p <- plot_ly(table, y = ~y, color = ~x, type = "box")
+p
+```
+## Does Season Affect Happiness
+we don't have timestamp of the moments collected. So, we can only find whether the moments contain certain season words, such as "Spring", "Autumn", "Winter" and "Summer". 
+```{r}
+sum(unlist(strsplit(hm_data$text,split = " "))=="spring")
+sum(unlist(strsplit(hm_data$text,split = " "))=="summer")
+sum(unlist(strsplit(hm_data$text,split = " "))=="winter")
+sum(unlist(strsplit(hm_data$text,split = " "))=="autumn")
+```
+We tried to find "Autumn", but there is zero "Autumn" mentioned in the moments, so we use "Fall" instead.  
+```{r}
+sum(unlist(strsplit(hm_data$text,split = " "))=="fall")
+```
+However, fall may be the verb "fall" instead of season "Fall"  
+
+In conclusion, we find summer has the most occurrence in happy moments. Thus, summer may be the best source among seasons.
+
+## Word Count
+```{r wordcloud, warning=FALSE, message=FALSE,echo=FALSE, cache=TRUE}
+bag_of_words <-  hm_data %>%
+  unnest_tokens(word, text)
+
+word_count <- bag_of_words %>%
+  count(word, sort = TRUE)
+
+```
+
+
+## compute TF-IDF weighted document-term matrices.
+
+As we would like to identify interesting words for each group, we use [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) to weigh each term within each speech.
+```{r}
+
+```
+
